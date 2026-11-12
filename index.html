@@ -685,12 +685,12 @@ const ACT = {
     <p class="note">Consigue tu clave gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Se guarda solo en este teléfono. En el nivel gratuito, Google usa lo que envías para mejorar sus productos.</p>
     <input class="field" id="kInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Pega aquí tu clave" value="${esc(gkey)}" aria-label="Clave de Gemini" style="background:#fff;border-color:rgba(27,25,5,.2)">
     <p id="kMsg" role="status"><strong>${gkey ? "IA activada." : "IA apagada."}</strong></p>
-    <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="dropKey" ${gkey ? "" : "disabled"}>Quitar clave</button><button class="btn dark press" style="flex:1" data-act="saveKey">Guardar y probar</button></div>
+    <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="dropKey" ${gkey ? "" : "disabled"}>Quitar clave</button><button class="btn dark press" style="flex:1" data-act="saveKey">Guardar</button></div>
     <button class="btn press wide" style="background:#fff" data-act="closeModal">Cerrar</button>`),
   dropKey: () => { gkey = ""; gmodel = ""; store.set("gkey", ""); store.set("gmodel", ""); net(); closeModal(); toast("Clave quitada. IA apagada."); },
   saveKey: async el => {
     const v = $("#kInput").value.trim(), msg = $("#kMsg"); if (!v) { msg.innerHTML = "<strong>Pega primero tu clave.</strong>"; return; }
-    gkey = v; store.set("gkey", v); net();
+    gkey = v; store.set("gkey", v); net(); const dk = document.querySelector('[data-act="dropKey"]'); if (dk) dk.disabled = false;
     if (!navigator.onLine){ msg.innerHTML = "<strong>Clave guardada.</strong> La probaré cuando haya internet."; return; }
     el.disabled = true; msg.innerHTML = "<strong>Probando…</strong>";
     try { await gemini('Responde solo con este JSON: {"ok":true}'); msg.innerHTML = "<strong>Clave funcionando. IA activada.</strong>"; buzz(10); }
