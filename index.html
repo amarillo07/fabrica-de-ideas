@@ -361,8 +361,8 @@ const T = [
 ];
 
 /* ---------- estado ---------- */
-const A = Object.assign({hobbies:[],custom:[],skills:[],budget:"",time:"",mode:"",goal:"",notes:{},customSkills:[],customOpt:{},seed:"",via:"gustos",gen:"gustos",meta:0,avoid:""}, store.get("answers", {}));
-A.notes = A.notes || {}; A.customSkills = A.customSkills || []; A.customOpt = A.customOpt || {}; A.seed = A.seed || ""; A.meta = Number(A.meta) || 0; A.avoid = A.avoid || "";
+const A = Object.assign({hobbies:[],custom:[],skills:[],budget:"",time:"",mode:"",goal:"",notes:{},customSkills:[],customOpt:{},seed:"",via:"gustos",gen:"gustos",meta:0,avoid:"",seen:{key:"",names:[]}}, store.get("answers", {}));
+A.notes = A.notes || {}; A.customSkills = A.customSkills || []; A.customOpt = A.customOpt || {}; A.seed = A.seed || ""; A.meta = Number(A.meta) || 0; if (!A.seen || !Array.isArray(A.seen.names)) A.seen = {key:"", names:[]}; A.avoid = A.avoid || "";
 let ideas = store.get("ideas", []);
 let folders = store.get("folders", [{id:"fav", name:"Favoritas", ideas:[]}]);
 let tab = "crear", step = 0, dir = 18, openFolder = null, sheetId = null, fresh = false, deferred = null, loading = false, busy = "";
@@ -395,14 +395,18 @@ function shape(level, t, desc, tema, fans, ia){
     ej:`${t.u.toLocaleString("es-MX")} ${t.un} a ${mx(t.pr)} son ${mx(total)} ${t.per || "al mes"}. Quitando costos te quedan unos ${mx(neto)}.`,
     inv: t.inv[0] === 0 ? `Hasta ${mx(t.inv[1])}` : t.inv[0] === t.inv[1] ? mx(t.inv[0]) : `${mx(t.inv[0])} a ${mx(t.inv[1])}`,
     fuera: t.inv[0] > bmax, cobro:t.cobro, riesgo:t.riesgo, paso:t.paso,
-    pr:t.pr, u:t.u, c:t.c, un:t.un, tema, fans, ia
+    pr:t.pr, u:t.u, c:t.c, un:t.un, tema, fans, ia, base:seedNow()
   };
 }
+const seenKey = () => seedNow() ? "i:" + seedNow().toLowerCase() : "g:" + [...A.hobbies, ...A.custom, ...A.skills, ...A.customSkills].join("|").toLowerCase();
+function localSeedIdea(level, base, avoid){
+  const opts = [VAR[level - 1](base), VAR2[level - 1](base)], ok = opts.filter(t => !(avoid || []).includes(t.nombre));
+  const t = pick(ok.length ? ok : opts);
+  return Object.assign(shape(level, t, t.desc, base, "tus clientes", false), {base});
+}
 function localAll(){
-  const seed = seedNow();
-  if (seed){ ideas = VAR.map((fn, i) => { const t = fn(seed); return shape(i + 1, t, t.desc, seed, "tus clientes", false); }); return; }
-  const prev = ideas.map(i => i.nombre);
-  ideas = Array.from({length:10}, (_, i) => makeIdea(i + 1, prev));
+  const seed = seedNow(), prev = A.seen.names;
+  ideas = Array.from({length:10}, (_, i) => seed ? localSeedIdea(i + 1, seed, prev) : makeIdea(i + 1, prev));
 }
 
 /*AI-START*/
@@ -432,17 +436,33 @@ async function gemini(prompt){
   throw last;
 }
 /*AI-END*/
+const VAR2 = [
+  B => ({tipo:"Entre conocidos",nombre:`${C(B)} solo por recomendación`,desc:"Empiezas con recomendados: cero publicidad, un cliente a la vez y cobro por adelantado.",un:"clientes",pr:1200,u:6,c:.35,inv:[500,3000],cobro:"2 semanas",riesgo:"bajo",paso:"Escribe a 15 contactos contando qué ofreces y cuánto cuesta."}),
+  B => ({tipo:"Asesoría",nombre:`Asesoría por hora en ${B}`,desc:"Cobras tu tiempo como asesor: el cliente ejecuta y tú lo guías paso a paso.",un:"horas",pr:450,u:25,c:.1,inv:[300,2000],cobro:"2 semanas",riesgo:"bajo",paso:"Ofrece una primera hora a mitad de precio a 5 personas."}),
+  B => ({tipo:"Alianzas",nombre:`${C(B)} en alianza con negocios locales`,desc:"Te alías con negocios que ya tienen a tus clientes y les das comisión por cada venta.",un:"ventas",pr:2000,u:6,c:.5,inv:[1500,5000],cobro:"1 mes",riesgo:"bajo",paso:"Propón la alianza a 3 negocios con una comisión del 15%."}),
+  B => ({tipo:"Por temporada",nombre:`${C(B)} de temporada alta`,desc:"Te concentras en las fechas fuertes del año y preparas todo con anticipación.",un:"pedidos",pr:1800,u:12,c:.45,inv:[3000,9000],cobro:"1 a 2 meses",riesgo:"medio",paso:"Marca en el calendario las 4 fechas con más demanda."}),
+  B => ({tipo:"En línea",nombre:`${C(B)} 100% en línea`,desc:"Todo se vende y se entrega por internet, así atiendes a clientes de cualquier ciudad.",un:"pedidos",pr:900,u:15,c:.3,inv:[1000,5000],cobro:"1 mes",riesgo:"medio",paso:"Arma una página sencilla con precios y botón de WhatsApp."}),
+  B => ({tipo:"Cliente único",nombre:`${C(B)} para un solo tipo de cliente`,desc:"Eliges un cliente muy específico y te vuelves la opción obvia para él.",un:"clientes",pr:3500,u:4,c:.4,inv:[2000,8000],cobro:"1 mes",riesgo:"medio",paso:"Describe a tu cliente ideal en 5 líneas y búscalo en 3 grupos."}),
+  B => ({tipo:"Por resultado",nombre:`${C(B)} con bono por resultado`,desc:"Cobras poco al inicio y un bono cuando el cliente consigue lo que quería.",un:"clientes",pr:4000,u:3,c:.35,inv:[2000,8000],cobro:"1 a 2 meses",riesgo:"medio",paso:"Define qué resultado se puede medir y cuánto bono es justo."}),
+  B => ({tipo:"Marketplace",nombre:`Marketplace de ${B}`,desc:"Reúnes a varios proveedores en un solo lugar y cobras comisión por cada contratación.",un:"contrataciones",pr:400,u:30,c:.15,inv:[3000,15000],cobro:"2 a 4 meses",riesgo:"alto",paso:"Junta a 10 proveedores dispuestos a aparecer gratis el primer mes."}),
+  B => ({tipo:"Marca blanca",nombre:`${C(B)} en marca blanca`,desc:"Haces el trabajo para otras empresas que lo venden con su nombre. Menos fama, más volumen.",un:"pedidos",pr:1500,u:12,c:.5,inv:[3000,12000],cobro:"2 a 3 meses",riesgo:"alto",paso:"Ofrece el servicio a 5 empresas que ya atienden a ese cliente."}),
+  B => ({tipo:"Itinerante",nombre:`${C(B)} de gira por ciudades`,desc:"Llevas el negocio de gira: una ciudad distinta cada mes, con fechas limitadas y lista de espera.",un:"clientes",pr:6000,u:4,c:.55,inv:[10000,40000],cobro:"3 a 6 meses",riesgo:"alto",paso:"Elige 2 ciudades cercanas y abre lista de espera."})
+];
 function perfil(){
   const L = (list, k) => { if (A[k] === "custom" && A.customOpt[k]) return A.customOpt[k]; const o = list.find(x => x.id === A[k]); return o ? `${o.t} (${o.s})` : "sin dato"; };
   const N = k => (A.notes[k] || "").trim() ? ` La persona agrega: "${A.notes[k].trim()}"` : "";
   return `Gustos: ${[...A.hobbies, ...A.custom].join(", ") || "sin dato"}.${N("hobbies")}\nHabilidades: ${[...A.skills, ...A.customSkills].join(", ") || "sin dato"}.${N("skills")}\nPresupuesto: ${L(BUDGETS, "budget")} MXN.${N("budget")}\nTiempo: ${L(TIMES, "time")}.${N("time")}\nForma de trabajo: ${L(MODES, "mode")}.${N("mode")}\nObjetivo: ${L(GOALS, "goal")}.${N("goal")}${A.meta > 0 ? `\nMeta de ganancia NETA al mes: ${mx(A.meta)} MXN.` : ""}`;
 }
 const seedNow = () => A.gen === "idea" ? A.seed.trim() : "";
+const metaLine = () => A.meta > 0 ? `\nMeta de ganancia NETA al mes: ${mx(A.meta)} MXN.` : "";
+/* Contexto de una idea: si nació de una idea base, solo esa base; si nació de los gustos, el perfil. Nunca los dos. */
+const ctxOf = it => { const b = it ? (it.base || "") : seedNow(); return b ? `IDEA BASE de la persona: "${b}". Mantente dentro de ese giro y no mezcles otros temas ni gustos que no estén aquí.${metaLine()}` : `PERFIL\n${perfil()}`; };
+const VARIETY = "Las 10 deben ser claramente distintas entre sí: cambia el modelo de ingreso, el tipo de cliente y el formato de una a otra. Máximo 2 del mismo tipo (suscripción, curso, evento, producto digital, contenido). No empieces dos nombres con la misma palabra ni repitas la misma fórmula de nombre, y no reutilices los mismos números en todas.";
 function promptAll(prev){
-  const no = prev ? " No repitas estas: " + prev + "." : "";
+  const no = prev ? " Ya se propusieron estas; no las repitas ni hagas versiones parecidas: " + prev + "." : "";
   const seed = seedNow();
-  if (seed) return `${RULES}\nLa persona ya tiene esta idea base: "${seed}". Propón EXACTAMENTE 10 variantes de ESE mismo negocio (mismo giro, cambiando enfoque, cliente, formato o forma de cobrar), ordenadas: la 1 es la versión más segura y sencilla; de la 2 a la 4 realistas con un giro; de la 5 a la 7 creativas; la 8 y la 9 muy originales de nicho; la 10 es la más única y atrevida, pero posible.${no}\n\nPERFIL (úsalo solo donde tenga datos)\n${perfil()}\n\nResponde solo con un arreglo JSON de 10 objetos con esta forma:\n${FORM}`;
-  return `${RULES}\nPropón EXACTAMENTE 10 ideas de negocio ordenadas: la 1 es la más segura y probada; de la 2 a la 4 realistas con un giro; de la 5 a la 7 creativas que mezclan los gustos; la 8 y la 9 muy originales de nicho; la 10 es la más única y atrevida, pero posible.${no}\n\nPERFIL\n${perfil()}\n\nResponde solo con un arreglo JSON de 10 objetos con esta forma:\n${FORM}`;
+  if (seed) return `${RULES}\nLa persona ya tiene esta idea base: "${seed}". Propón EXACTAMENTE 10 variantes de ESE mismo negocio (mismo giro, cambiando enfoque, cliente, formato o forma de cobrar), ordenadas: la 1 es la versión más segura y sencilla; de la 2 a la 4 realistas con un giro; de la 5 a la 7 creativas; la 8 y la 9 muy originales de nicho; la 10 es la más única y atrevida, pero posible. Trabaja SOLO con esa idea base: no la mezcles con otros temas, gustos o negocios. ${VARIETY}${no}${metaLine()}\n\nResponde solo con un arreglo JSON de 10 objetos con esta forma:\n${FORM}`;
+  return `${RULES}\nPropón EXACTAMENTE 10 ideas de negocio ordenadas: la 1 es la más segura y probada; de la 2 a la 4 realistas con un giro; de la 5 a la 7 creativas; la 8 y la 9 muy originales de nicho; la 10 es la más única y atrevida, pero posible. Usa solo los gustos del perfil: algunas ideas parten de un solo gusto y otras combinan dos, pero no metas todos los gustos en cada idea. ${VARIETY}${no}\n\nPERFIL\n${perfil()}\n\nResponde solo con un arreglo JSON de 10 objetos con esta forma:\n${FORM}`;
 }
 /* Variantes sin IA de una idea base, de la 1 (segura) a la 10 (única) */
 const VAR = [
@@ -471,11 +491,12 @@ function fromAI(o, level){
   return shape(level, t, String(o.desc || "").slice(0, 420), String(o.tema || "negocio").slice(0, 30), String(o.fans || "tus clientes").slice(0, 80), true);
 }
 async function generateAll(){
+  if (A.seen.key !== seenKey()) A.seen = {key:seenKey(), names:[]};
   let how = "local";
   if (aiOn()){
     loading = true; go("ideas");
     try {
-      const prev = ideas.map(i => i.nombre).join("; ");
+      const prev = A.seen.names.join("; ");
       const arr = await gemini(promptAll(prev));
       const list = (Array.isArray(arr) ? arr : (arr && arr.ideas) || []).slice(0, 10).map((o, i) => fromAI(o, i + 1));
       if (list.length < 10) throw {code:"red"};
@@ -483,6 +504,7 @@ async function generateAll(){
     } catch(e){ localAll(); how = (e && e.code) || "red"; }
     loading = false;
   } else localAll();
+  A.seen.names = [...A.seen.names, ...ideas.map(i => i.nombre)].slice(-40);
   fresh = true; save();
   return how;
 }
@@ -515,6 +537,7 @@ const STEPS = [
 ];
 const stepOk = i => { const s = STEPS[i]; return !!(A.notes[s.key] || "").trim() || (s.multi ? (A[s.key].length + A[s.ck].length) > 0 : !!A[s.key]); };
 
+const RESET = `<button class="chip add press" style="align-self:center" data-act="askReset">Borrar todo y empezar de cero</button>`;
 const metaField = () => `<div class="more"><label class="eyebrow" for="meta">Ganancia neta que buscas al mes (MXN, opcional)</label><input class="field" id="meta" data-meta="1" type="text" inputmode="numeric" autocomplete="off" placeholder="Ej. 15,000" value="${A.meta ? A.meta.toLocaleString("es-MX") : ""}"></div>`;
 function metaInfo(it){
   if (!(A.meta > 0) || !it.pr) return null;
@@ -529,7 +552,7 @@ function viewCrear(){
       <textarea class="area" id="seed" data-seed="1" maxlength="200" placeholder="Ej. agencia de propuestas de matrimonio" aria-label="Tu idea base">${esc(A.seed)}</textarea>${metaField()}
       <div class="more"><span class="eyebrow">O prueba con</span><div class="chips">${["Agencia de propuestas de matrimonio","Cafetería para gamers","Clases de repostería"].map(x => `<button class="chip press" data-act="seedEx" data-v="${x}">${x}</button>`).join("")}</div></div>
     </div></div>
-    <div class="row stick"><button class="btn big cta press" data-act="genSeed" ${A.seed.trim() ? "" : "disabled"}><span>Dame 10 variantes</span>${ICON.next}</button></div></section>`;
+    <div class="row stick"><button class="btn big cta press" data-act="genSeed" ${A.seed.trim() ? "" : "disabled"}><span>Dame 10 variantes</span>${ICON.next}</button></div>${RESET}</section>`;
   const s = STEPS[step], last = step === STEPS.length - 1;
   const xs = ICON.x.replace('width="18" height="18"', 'width="13" height="13"');
   let body;
@@ -551,7 +574,7 @@ function viewCrear(){
     <div class="row stick">
       ${step > 0 ? `<button class="btn round c press" data-act="prev" aria-label="Pregunta anterior">${ICON.back}</button>` : ""}
       <button class="btn big cta press" data-act="next" ${stepOk(step) ? "" : "disabled"}><span>${last ? "Generar 10 ideas" : "Siguiente"}</span>${ICON.next}</button>
-    </div>
+    </div>${RESET}
   </section>`;
 }
 
@@ -671,7 +694,7 @@ function pickerHTML(id){
     <button class="frow press" style="background:transparent;border:1px dashed rgba(27,25,5,.5)" data-act="newFolderFor" data-id="${id}">${ICON.plus}<span>Nueva carpeta</span></button>
     <button class="btn dark press wide" data-act="closeModal">Listo</button>`;
 }
-const noOf = it => String(it && it.no != null ? it.no : A.avoid).trim();
+const noOf = it => String((it && it.no) || "").trim();
 const wantTxt = it => it && it.si ? ` La persona quiere CAMBIAR o AGREGAR esto a la idea, inclúyelo: "${it.si}".` : "";
 const avoidTxt = it => noOf(it) ? ` De esta idea a la persona NO le gusta o quiere EVITAR esto, respétalo sin excepción: "${noOf(it)}".` : "";
 let avoidFor = null;
@@ -694,9 +717,10 @@ function buildPrompt(it){
   const pl = it.plan, mi = metaInfo(it), L = [];
   L.push("Quiero que me ayudes a desarrollar a detalle la MARCA y el plan de este negocio. Soy una sola persona en México; todas las cifras van en pesos mexicanos (MXN).", "");
   L.push("## La idea", `Nombre provisional: ${it.nombre}`, `Tipo: ${it.tipo}`, `Qué es: ${it.desc}`, `Quién lo compra: ${it.fans}`, `Inversión inicial estimada: ${it.inv}`, `Tiempo al primer cobro: ${it.cobro}`, `Riesgo: ${it.riesgo}`, `Qué tan atrevida es: ${it.nivel} de 10 (1 es lo más seguro, 10 lo más único)`, `Ejemplo con números: ${it.ej}`, `Primer paso que ya tengo: ${it.paso}`);
-  if (seedNow()) L.push(`Idea base de la que salió: ${seedNow()}`);
+  if (it.base) L.push(`Idea base de la que salió: ${it.base}`);
   if (pl) L.push("", "## Plan de 30 días que ya tengo", ...pl.weeks.map((w, i) => `Semana ${i + 1}: ${w}`), `Números: precio ${mx(it.pr)}, costo aproximado ${mx(pl.costo)}, ganancia ${mx(pl.gan)} por venta.`, `Nombres que me propusieron: ${pl.names.join(", ")}`, `Mayor riesgo detectado: ${pl.risk}`);
-  L.push("", "## Sobre mí", ...perfil().split("\n").filter(l => !l.includes("sin dato")));
+  const yo = it.base ? (A.meta > 0 ? [`Meta de ganancia NETA al mes: ${mx(A.meta)} MXN.`] : []) : perfil().split("\n").filter(l => !l.includes("sin dato"));
+  if (yo.length) L.push("", "## Sobre mí", ...yo);
   if (mi) L.push(`Para mi meta necesito cerca de ${mi.n.toLocaleString("es-MX")} ${it.un} al mes. ${mi.txt}`);
   if (it.si) L.push(`A esta idea le quiero CAMBIAR o AGREGAR: ${it.si}`);
   if (noOf(it)) L.push(`De esta idea NO me gusta o quiero EVITAR: ${noOf(it)}`);
@@ -785,6 +809,8 @@ const ACT = {
   unCustom: el => { const k = STEPS[step].ck; A[k] = A[k].filter(x => x !== el.dataset.v); save(); render(); },
   addCustom: () => { const s = STEPS[step]; askText(s.key === "skills" ? "¿Qué más sabes hacer?" : "¿Qué otra cosa te apasiona?", s.key === "skills" ? "Ej. contabilidad, soldar, inglés" : "Ej. pesca, K-pop, ajedrez", "", "Agregar", v => { if (!A[s.ck].includes(v) && !A[s.key].includes(v)) A[s.ck].push(v); save(); render(); }); },
   addOpt: () => { const k = STEPS[step].key; askText("Tu respuesta", "Escríbela con tus palabras", A.customOpt[k] || "", "Agregar", v => { A.customOpt[k] = v; A[k] = "custom"; save(); render(); }); },
+  askReset: () => openModal(`<h2>¿Empezar de cero?</h2><p>Se borran tus respuestas, tu idea base, tu meta y las 10 ideas en pantalla. <strong>Tus carpetas guardadas no se tocan.</strong></p><div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="doReset">Borrar y empezar</button></div>`),
+  doReset: () => { Object.assign(A, {hobbies:[], custom:[], skills:[], customSkills:[], budget:"", time:"", mode:"", goal:"", notes:{}, customOpt:{}, seed:"", meta:0, avoid:"", seen:{key:"", names:[]}}); ideas = []; step = 0; sel = null; save(); closeModal(); render(); window.scrollTo({top:0}); toast("Listo, empezamos de cero"); },
   via: el => { A.via = el.dataset.v; dir = 18; save(); render(); },
   seedEx: el => { A.seed = el.dataset.v; save(); render(); },
   genSeed: () => { if (!A.seed.trim() || loading) return; A.gen = "idea"; runGen(); },
@@ -829,7 +855,7 @@ const ACT = {
     if (aiOn()){
       busy = "develop"; renderSheet();
       try {
-        const o = await gemini(`${RULES}\nDesarrolla esta idea de negocio para la persona del perfil.${wantTxt(it)}${avoidTxt(it)}\nIDEA: ${it.nombre}. ${it.desc} Inversión: ${it.inv}. Precio por venta: ${mx(it.pr)}.\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON: {"weeks":["semana 1","semana 2","semana 3","semana 4"],"names":["nombre 1","nombre 2","nombre 3"],"risk":"el mayor riesgo y cómo evitarlo, en 1 o 2 frases"}\nCada semana es una acción concreta de una frase.`);
+        const o = await gemini(`${RULES}\nDesarrolla esta idea de negocio para la persona del perfil.${wantTxt(it)}${avoidTxt(it)}\nIDEA: ${it.nombre}. ${it.desc} Inversión: ${it.inv}. Precio por venta: ${mx(it.pr)}.\n\n${ctxOf(it)}\n\nResponde solo con un objeto JSON: {"weeks":["semana 1","semana 2","semana 3","semana 4"],"names":["nombre 1","nombre 2","nombre 3"],"risk":"el mayor riesgo y cómo evitarlo, en 1 o 2 frases"}\nCada semana es una acción concreta de una frase.`);
         if (Array.isArray(o.weeks) && o.weeks.length >= 3) plan.weeks = o.weeks.slice(0, 4).map(x => String(x).slice(0, 260));
         if (Array.isArray(o.names) && o.names.length) plan.names = o.names.slice(0, 3).map(x => String(x).slice(0, 60));
         if (o.risk) plan.risk = String(o.risk).slice(0, 320);
@@ -845,13 +871,15 @@ const ACT = {
     if (aiOn()){
       busy = "vary"; renderSheet();
       try {
-        const o = await gemini(`${RULES}\n${old.si ? `Reescribe la idea de negocio "${old.nombre}" (${old.desc}) aplicando estos cambios que pide la persona: "${old.si}". Conserva lo demás y su nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único).` : `Propón UNA idea de negocio nueva y distinta a "${old.nombre}", con el mismo nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único).`}${avoidTxt(old)}\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON con esta forma:\n${FORM}`);
+        const o = await gemini(`${RULES}\n${old.si ? `Reescribe la idea de negocio "${old.nombre}" (${old.desc}) aplicando estos cambios que pide la persona: "${old.si}". Conserva lo demás y su nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único).` : `Propón UNA ${old.base ? "variante" : "idea de negocio"} nueva y claramente distinta a "${old.nombre}"${old.base ? ", dentro de la misma idea base" : ""}, con el mismo nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único). Tampoco repitas estas: ${ideas.map(x => x.nombre).join("; ")}.`}${avoidTxt(old)}\n\n${ctxOf(old)}\n\nResponde solo con un objeto JSON con esta forma:\n${FORM}`);
         nu = fromAI(Array.isArray(o) ? o[0] : o, old.nivel);
       } catch(e){ toast(AIERR[(e && e.code) || "red"] + " Usé el generador propio."); }
       busy = "";
     }
     const viaIA = !!nu;
-    if (!nu) nu = makeIdea(old.nivel, [old.nombre]);
+    const taken = ideas.map(x => x.nombre);
+    if (!nu) nu = old.base ? localSeedIdea(old.nivel, old.base, taken) : makeIdea(old.nivel, taken);
+    nu.base = old.base || "";
     if (old.no) nu.no = old.no;
     const i = ideas.findIndex(x => x.id === old.id);
     if (i >= 0){ ideas[i] = nu; } else { ideas = ideas.filter(x => x.nivel !== nu.nivel).concat(nu).sort((x, y) => x.nivel - y.nivel); }
