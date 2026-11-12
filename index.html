@@ -148,6 +148,9 @@ h1,h2,h3,p{margin:0}
 .tags{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;font-weight:600}
 .tags span{padding:6px 11px;border-radius:12px;background:var(--white)}
 .tags .warn{background:var(--ink);color:var(--cream)}
+.tags .no{background:transparent;border:1px dashed rgba(27,25,5,.55);font-weight:500;max-width:100%;overflow-wrap:anywhere}
+.cacts{display:flex;gap:6px}
+.cacts button{flex:1;min-width:0;height:44px;border-radius:22px;background:rgba(255,255,255,.72);border:1px solid var(--white);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap}
 .empty{border-radius:32px;padding:28px 22px;display:flex;flex-direction:column;gap:14px;align-items:flex-start}
 .empty h2{font-size:24px;line-height:1.1;font-weight:600;letter-spacing:-.02em}
 .empty p{color:var(--ink2);font-size:15px}
@@ -562,7 +565,8 @@ function cardHTML(it, i){
       </button>
       ${sel ? `<button class="selbtn press" data-act="selToggle" data-id="${it.id}" aria-pressed="${sel.has(it.id)}" aria-label="Seleccionar para el PDF"><span class="check">${ICON.check}</span></button>` : `<button class="bm press" data-act="pick" data-id="${it.id}" aria-pressed="${saved}" aria-label="${saved ? "Guardada. Cambiar carpetas" : "Guardar en carpeta"}">${ICON.bm}</button>`}
     </div>
-    <div class="tags"><span>${it.inv}</span><span>Cobras en ${it.cobro}</span>${it.fuera ? '<span class="warn">Sobre tu presupuesto</span>' : ""}</div>
+    <div class="tags"><span>${it.inv}</span><span>Cobras en ${it.cobro}</span>${it.fuera ? '<span class="warn">Sobre tu presupuesto</span>' : ""}${it.no ? `<span class="no">Evitar: ${esc(it.no)}</span>` : ""}</div>
+    ${sel ? "" : `<div class="cacts"><button class="press" data-act="cardNo" data-id="${it.id}">${it.no ? "Editar nota" : "No me gusta…"}</button><button class="press" data-act="cardVary" data-id="${it.id}">Variar</button><button class="press" data-act="cardDev" data-id="${it.id}">${it.plan ? "Ver plan" : "Desarrollar"}</button></div>`}
   </article>`;
 }
 
@@ -638,6 +642,7 @@ function renderSheet(){
     <div class="block"><span class="eyebrow">Ejemplo con números</span><p>${esc(it.ej)}</p></div>
     ${mi ? `<div class="block"><span class="eyebrow">Tu meta: ${mx(A.meta)} netos al mes</span><p>Necesitas cerca de <strong>${mi.n.toLocaleString("es-MX")} ${esc(it.un)}</strong> al mes. ${mi.txt}</p></div>` : ""}
     <div class="step1"><strong>Primer paso:</strong> ${esc(it.paso)}</div>
+    <button class="chip add press" style="align-self:flex-start;height:auto;min-height:44px;padding:8px 14px;text-align:left" data-act="cardNo" data-id="${it.id}">${it.no ? "Evitar: " + esc(it.no) : "+ Anotar qué no me gusta"}</button>
     ${pl ? `<div class="plan"><h3>Plan de 30 días</h3><ol>${pl.weeks.map(w => `<li>${esc(w)}</li>`).join("")}</ol>
       <h3>Números sencillos</h3><div class="nums"><div><b>${mx(it.pr)}</b>precio por venta</div><div><b>${mx(pl.costo)}</b>costo aproximado</div><div><b>${mx(pl.gan)}</b>ganancia por venta</div><div><b>${pl.n.toLocaleString("es-MX")}</b>ventas para ganar ${mx(pl.meta)} al mes</div></div>
       <h3>Nombres posibles</h3><ul>${pl.names.map(n => `<li>${esc(n)}</li>`).join("")}</ul>
@@ -666,15 +671,20 @@ function pickerHTML(id){
     <button class="frow press" style="background:transparent;border:1px dashed rgba(27,25,5,.5)" data-act="newFolderFor" data-id="${id}">${ICON.plus}<span>Nueva carpeta</span></button>
     <button class="btn dark press wide" data-act="closeModal">Listo</button>`;
 }
-const avoidTxt = () => A.avoid.trim() ? ` La persona quiere EVITAR esto, respétalo sin excepción: "${A.avoid.trim()}".` : "";
-function askAvoid(kind){
-  const dev = kind === "develop";
-  openModal(`<h2>${dev ? "Desarrollar la idea" : "Variar la idea"}</h2>
-    <label class="eyebrow" for="avoid">¿Algo que quieras evitar? (opcional)</label>
-    <textarea class="area" id="avoid" maxlength="300" placeholder="Ej. no quiero invertir más de $3,000 ni trabajar domingos" style="border-color:rgba(27,25,5,.2)">${esc(A.avoid)}</textarea>
+const noOf = it => String(it && it.no != null ? it.no : A.avoid).trim();
+const avoidTxt = it => noOf(it) ? ` De esta idea a la persona NO le gusta o quiere EVITAR esto, respétalo sin excepción: "${noOf(it)}".` : "";
+let avoidFor = null;
+function askAvoid(kind, id){
+  const it = findIdea(id); if (!it) return;
+  avoidFor = id;
+  const dev = kind === "develop", note = kind === "note";
+  openModal(`<h2>${note ? "Qué no me gusta" : dev ? "Desarrollar la idea" : "Variar la idea"}</h2>
+    <p class="note"><strong>${esc(it.nombre)}</strong></p>
+    <label class="eyebrow" for="avoid">¿Qué no te gusta de esta idea o qué quieres evitar?${note ? "" : " (opcional)"}</label>
+    <textarea class="area" id="avoid" maxlength="300" placeholder="Ej. no quiero invertir más de $3,000 ni trabajar domingos" style="border-color:rgba(27,25,5,.2)">${esc(noOf(it))}</textarea>
     <div class="chips">${["Invertir más dinero","Trabajar fines de semana","Atender en persona","Depender de redes sociales","Contratar gente"].map(x => `<button class="chip press" style="border-color:rgba(27,25,5,.2)" data-act="avoidChip" data-v="${x}">${x}</button>`).join("")}</div>
-    ${aiOn() ? "" : `<p class="note">Sin IA activa no puedo tomar esto en cuenta: usaré el ${dev ? "plan básico" : "generador propio"}.</p>`}
-    <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="goAvoid" data-kind="${kind}">${dev ? "Desarrollar" : "Variar"}</button></div>`);
+    ${note ? `<p class="note">Se guarda en esta idea y se usa cuando la varíes o la desarrolles${aiOn() ? "" : " con IA"}.</p>` : aiOn() ? "" : `<p class="note">Sin IA activa no puedo tomar esto en cuenta: usaré el ${dev ? "plan básico" : "generador propio"}.</p>`}
+    <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="goAvoid" data-kind="${kind}">${note ? "Guardar" : dev ? "Desarrollar" : "Variar"}</button></div>`);
   const t = $("#avoid"); if (t) setTimeout(() => t.blur(), 0);
 }
 function buildPrompt(it){
@@ -685,7 +695,7 @@ function buildPrompt(it){
   if (pl) L.push("", "## Plan de 30 días que ya tengo", ...pl.weeks.map((w, i) => `Semana ${i + 1}: ${w}`), `Números: precio ${mx(it.pr)}, costo aproximado ${mx(pl.costo)}, ganancia ${mx(pl.gan)} por venta.`, `Nombres que me propusieron: ${pl.names.join(", ")}`, `Mayor riesgo detectado: ${pl.risk}`);
   L.push("", "## Sobre mí", ...perfil().split("\n").filter(l => !l.includes("sin dato")));
   if (mi) L.push(`Para mi meta necesito cerca de ${mi.n.toLocaleString("es-MX")} ${it.un} al mes. ${mi.txt}`);
-  if (A.avoid.trim()) L.push(`Quiero EVITAR: ${A.avoid.trim()}`);
+  if (noOf(it)) L.push(`De esta idea NO me gusta o quiero EVITAR: ${noOf(it)}`);
   L.push("", "## Lo que necesito de ti", "Antes de empezar, hazme máximo 5 preguntas para afinar. Después entrégame, por secciones:", "1. Cliente ideal: quién es, qué le duele y dónde encontrarlo.", "2. Propuesta de valor en una frase y 3 diferenciadores frente a la competencia.", "3. 10 nombres de marca con su porqué, y cómo revisar que estén libres en redes y en el IMPI.", "4. Identidad visual: paleta de colores con códigos, tipografías, estilo de fotos y 3 ideas de logo.", "5. Voz de la marca: tono, palabras que sí y que no, eslogan y 5 ejemplos de publicaciones.", "6. Oferta: paquetes con qué incluye cada uno, precios en MXN y margen estimado.", "7. Números: punto de equilibrio y cuántas ventas necesito al mes para mi meta.", "8. Plan de lanzamiento de 90 días, semana por semana, con presupuesto.", "9. Canales de venta y 20 ideas de contenido.", "10. Riesgos, trámites básicos en México (SAT, permisos) y cómo empezar sin gastar de más.", "", "Sé concreto, usa ejemplos sencillos con números y dime con honestidad qué partes de la idea ves débiles.");
   return L.join("\n");
 }
@@ -795,10 +805,19 @@ const ACT = {
   renameFolder: () => { const f = folders.find(x => x.id === openFolder); askText("Cambiar nombre", "Nombre", f.name, "Guardar", v => { f.name = v; save(); render(); }); },
   askDelete: () => { const f = folders.find(x => x.id === openFolder); openModal(`<h2>¿Borrar «${esc(f.name)}»?</h2><p>${f.ideas.length ? `Se borrarán también sus ${f.ideas.length} ideas guardadas.` : "La carpeta está vacía."} No se puede deshacer.</p><div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="doDelete">Borrar carpeta</button></div>`); },
   doDelete: () => { folders = folders.filter(x => x.id !== openFolder); openFolder = null; save(); closeModal(); render(); toast("Carpeta borrada"); },
-  develop: () => { const it = findIdea(sheetId); if (!it || busy) return; if (it.plan){ it.plan = null; save(); renderSheet(); return; } askAvoid("develop"); },
-  vary: () => { if (!findIdea(sheetId) || busy) return; askAvoid("vary"); },
+  develop: () => { const it = findIdea(sheetId); if (!it || busy) return; if (it.plan){ it.plan = null; save(); renderSheet(); return; } askAvoid("develop", sheetId); },
+  vary: () => { if (!findIdea(sheetId) || busy) return; askAvoid("vary", sheetId); },
+  cardNo: el => askAvoid("note", el.dataset.id),
+  cardVary: el => { if (busy) return; openSheet(el.dataset.id); askAvoid("vary", el.dataset.id); },
+  cardDev: el => { if (busy) return; const it = findIdea(el.dataset.id); if (!it) return; openSheet(it.id); if (it.plan) setTimeout(() => { const p = $("#sheet .plan"); p && p.scrollIntoView({behavior:"smooth", block:"start"}); }, 500); else askAvoid("develop", it.id); },
   avoidChip: el => { const t = $("#avoid"); if (!t) return; const v = el.dataset.v; t.value = t.value.trim() ? (t.value.includes(v) ? t.value : t.value.trim().replace(/[.,;]$/, "") + ", " + v.toLowerCase()) : v; },
-  goAvoid: el => { A.avoid = $("#avoid").value.trim(); save(); const k = el.dataset.kind; closeModal(); k === "develop" ? ACT.doDevelop() : ACT.doVary(); },
+  goAvoid: el => {
+    const it = findIdea(avoidFor), v = $("#avoid").value.trim(), k = el.dataset.kind; if (!it) return closeModal();
+    it.no = v; A.avoid = v; save(); closeModal();
+    if (k === "note"){ if (sheetId === it.id) renderSheet(); document.querySelectorAll(`#c-${it.id}`).forEach(c => { c.outerHTML = cardHTML(it, 0); }); toast(v ? "Anotado en esta idea" : "Nota borrada"); return; }
+    if (sheetId !== it.id) openSheet(it.id);
+    k === "develop" ? ACT.doDevelop() : ACT.doVary();
+  },
   doDevelop: async () => {
     const it = findIdea(sheetId); if (!it || busy) return;
     if (it.plan){ it.plan = null; save(); renderSheet(); return; }
@@ -806,7 +825,7 @@ const ACT = {
     if (aiOn()){
       busy = "develop"; renderSheet();
       try {
-        const o = await gemini(`${RULES}\nDesarrolla esta idea de negocio para la persona del perfil.${avoidTxt()}\nIDEA: ${it.nombre}. ${it.desc} Inversión: ${it.inv}. Precio por venta: ${mx(it.pr)}.\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON: {"weeks":["semana 1","semana 2","semana 3","semana 4"],"names":["nombre 1","nombre 2","nombre 3"],"risk":"el mayor riesgo y cómo evitarlo, en 1 o 2 frases"}\nCada semana es una acción concreta de una frase.`);
+        const o = await gemini(`${RULES}\nDesarrolla esta idea de negocio para la persona del perfil.${avoidTxt(it)}\nIDEA: ${it.nombre}. ${it.desc} Inversión: ${it.inv}. Precio por venta: ${mx(it.pr)}.\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON: {"weeks":["semana 1","semana 2","semana 3","semana 4"],"names":["nombre 1","nombre 2","nombre 3"],"risk":"el mayor riesgo y cómo evitarlo, en 1 o 2 frases"}\nCada semana es una acción concreta de una frase.`);
         if (Array.isArray(o.weeks) && o.weeks.length >= 3) plan.weeks = o.weeks.slice(0, 4).map(x => String(x).slice(0, 260));
         if (Array.isArray(o.names) && o.names.length) plan.names = o.names.slice(0, 3).map(x => String(x).slice(0, 60));
         if (o.risk) plan.risk = String(o.risk).slice(0, 320);
@@ -822,13 +841,14 @@ const ACT = {
     if (aiOn()){
       busy = "vary"; renderSheet();
       try {
-        const o = await gemini(`${RULES}\nPropón UNA idea de negocio nueva y distinta a "${old.nombre}", con el mismo nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único).${avoidTxt()}\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON con esta forma:\n${FORM}`);
+        const o = await gemini(`${RULES}\nPropón UNA idea de negocio nueva y distinta a "${old.nombre}", con el mismo nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único).${avoidTxt(old)}\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON con esta forma:\n${FORM}`);
         nu = fromAI(Array.isArray(o) ? o[0] : o, old.nivel);
       } catch(e){ toast(AIERR[(e && e.code) || "red"] + " Usé el generador propio."); }
       busy = "";
     }
     const viaIA = !!nu;
     if (!nu) nu = makeIdea(old.nivel, [old.nombre]);
+    if (old.no) nu.no = old.no;
     const i = ideas.findIndex(x => x.id === old.id);
     if (i >= 0){ ideas[i] = nu; } else { ideas = ideas.filter(x => x.nivel !== nu.nivel).concat(nu).sort((x, y) => x.nivel - y.nivel); }
     save(); buzz(12);
