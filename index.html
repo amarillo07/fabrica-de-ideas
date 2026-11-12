@@ -690,11 +690,11 @@ const ACT = {
   dropKey: () => { gkey = ""; gmodel = ""; store.set("gkey", ""); store.set("gmodel", ""); net(); closeModal(); toast("Clave quitada. IA apagada."); },
   saveKey: async el => {
     const v = $("#kInput").value.trim(), msg = $("#kMsg"); if (!v) { msg.innerHTML = "<strong>Pega primero tu clave.</strong>"; return; }
-    gkey = v; store.set("gkey", v); net(); const dk = document.querySelector('[data-act="dropKey"]'); if (dk) dk.disabled = false;
-    if (!navigator.onLine){ msg.innerHTML = "<strong>Clave guardada.</strong> La probaré cuando haya internet."; return; }
+    $("#kInput").blur(); gkey = v; store.set("gkey", v); net(); const dk = document.querySelector('[data-act="dropKey"]'); if (dk) dk.disabled = false;
+    if (!navigator.onLine){ msg.innerHTML = "<strong>Clave guardada.</strong> La probaré cuando haya internet."; toast("Clave guardada"); return; }
     el.disabled = true; msg.innerHTML = "<strong>Probando…</strong>";
-    try { await gemini('Responde solo con este JSON: {"ok":true}'); msg.innerHTML = "<strong>Clave funcionando. IA activada.</strong>"; buzz(10); }
-    catch(e){ const c = (e && e.code) || "red"; msg.innerHTML = "<strong>" + (c === "clave" ? "Esa clave no funcionó. Revisa que esté completa." : c === "limite" ? "La clave sirve, pero llegó al límite gratis por ahora." : "No pude probarla. Revisa tu conexión.") + "</strong>"; }
+    try { await gemini('Responde solo con este JSON: {"ok":true}'); msg.innerHTML = "<strong>Clave funcionando. IA activada.</strong>"; buzz(10); closeModal(); toast("Clave guardada. IA activada."); }
+    catch(e){ const c = (e && e.code) || "red"; msg.innerHTML = "<strong>" + (c === "clave" ? "Esa clave no funcionó. Revisa que esté completa." : c === "limite" ? "La clave sirve, pero llegó al límite gratis por ahora." : "No pude probarla. Revisa tu conexión.") + "</strong>"; toast(c === "clave" ? "Esa clave no funcionó" : c === "limite" ? "Clave guardada, pero sin cupo gratis por ahora" : "Clave guardada, pero no pude probarla"); }
     el.disabled = false;
   },
   install: async () => {
