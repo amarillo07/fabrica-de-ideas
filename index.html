@@ -289,6 +289,7 @@ const ICON = {
   check:'<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFE04D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>',
   pen:'<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
   down:'<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>',
+  copy:'<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
   trash:'<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>'
 };
 
@@ -644,7 +645,8 @@ function renderSheet(){
     <div class="row"><button class="btn c press" style="flex:1" data-act="develop" ${busy ? "disabled" : ""}>${ICON.list}<span>${busy === "develop" ? "Pensando…" : pl ? "Ocultar plan" : "Desarrollar"}</span></button>
       <button class="btn c press" style="flex:1" data-act="vary" ${busy ? "disabled" : ""}>${ICON.mix}<span>${busy === "vary" ? "Pensando…" : "Variar idea"}</span></button></div>
     <button class="btn big cta press wide" style="flex:none" data-act="pick" data-id="${it.id}">${ICON.bm}<span>${saved ? "Cambiar carpetas" : "Guardar en carpeta"}</span></button>
-    <button class="btn press wide" style="background:#fff;flex:none" data-act="pdf" data-scope="idea">${ICON.down}<span>Exportar esta idea en PDF</span></button>`;
+    <button class="btn press wide" style="background:#fff;flex:none" data-act="pdf" data-scope="idea">${ICON.down}<span>Exportar esta idea en PDF</span></button>
+    <button class="btn press wide" style="background:#fff;flex:none" data-act="prompt">${ICON.copy}<span>Prompt para desarrollarla en un chat</span></button>`;
 }
 function openSheet(id){ sheetId = id; renderSheet(); $("#sheet").scrollTop = 0; $("#sheet").classList.add("open"); $("#scrim").classList.add("open"); }
 function closeSheet(){ sheetId = null; $("#sheet").classList.remove("open"); $("#scrim").classList.remove("open"); }
@@ -675,6 +677,19 @@ function askAvoid(kind){
     <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="goAvoid" data-kind="${kind}">${dev ? "Desarrollar" : "Variar"}</button></div>`);
   const t = $("#avoid"); if (t) setTimeout(() => t.blur(), 0);
 }
+function buildPrompt(it){
+  const pl = it.plan, mi = metaInfo(it), L = [];
+  L.push("Quiero que me ayudes a desarrollar a detalle la MARCA y el plan de este negocio. Soy una sola persona en México; todas las cifras van en pesos mexicanos (MXN).", "");
+  L.push("## La idea", `Nombre provisional: ${it.nombre}`, `Tipo: ${it.tipo}`, `Qué es: ${it.desc}`, `Quién lo compra: ${it.fans}`, `Inversión inicial estimada: ${it.inv}`, `Tiempo al primer cobro: ${it.cobro}`, `Riesgo: ${it.riesgo}`, `Qué tan atrevida es: ${it.nivel} de 10 (1 es lo más seguro, 10 lo más único)`, `Ejemplo con números: ${it.ej}`, `Primer paso que ya tengo: ${it.paso}`);
+  if (seedNow()) L.push(`Idea base de la que salió: ${seedNow()}`);
+  if (pl) L.push("", "## Plan de 30 días que ya tengo", ...pl.weeks.map((w, i) => `Semana ${i + 1}: ${w}`), `Números: precio ${mx(it.pr)}, costo aproximado ${mx(pl.costo)}, ganancia ${mx(pl.gan)} por venta.`, `Nombres que me propusieron: ${pl.names.join(", ")}`, `Mayor riesgo detectado: ${pl.risk}`);
+  L.push("", "## Sobre mí", ...perfil().split("\n").filter(l => !l.includes("sin dato")));
+  if (mi) L.push(`Para mi meta necesito cerca de ${mi.n.toLocaleString("es-MX")} ${it.un} al mes. ${mi.txt}`);
+  if (A.avoid.trim()) L.push(`Quiero EVITAR: ${A.avoid.trim()}`);
+  L.push("", "## Lo que necesito de ti", "Antes de empezar, hazme máximo 5 preguntas para afinar. Después entrégame, por secciones:", "1. Cliente ideal: quién es, qué le duele y dónde encontrarlo.", "2. Propuesta de valor en una frase y 3 diferenciadores frente a la competencia.", "3. 10 nombres de marca con su porqué, y cómo revisar que estén libres en redes y en el IMPI.", "4. Identidad visual: paleta de colores con códigos, tipografías, estilo de fotos y 3 ideas de logo.", "5. Voz de la marca: tono, palabras que sí y que no, eslogan y 5 ejemplos de publicaciones.", "6. Oferta: paquetes con qué incluye cada uno, precios en MXN y margen estimado.", "7. Números: punto de equilibrio y cuántas ventas necesito al mes para mi meta.", "8. Plan de lanzamiento de 90 días, semana por semana, con presupuesto.", "9. Canales de venta y 20 ideas de contenido.", "10. Riesgos, trámites básicos en México (SAT, permisos) y cómo empezar sin gastar de más.", "", "Sé concreto, usa ejemplos sencillos con números y dime con honestidad qué partes de la idea ves débiles.");
+  return L.join("\n");
+}
+function fallbackCopy(t){ t.focus(); t.select(); try { t.setSelectionRange(0, t.value.length); } catch(e){} let ok = false; try { ok = document.execCommand("copy"); } catch(e){} toast(ok ? "Prompt copiado" : "Selecciónalo y cópialo a mano"); }
 let toastT;
 function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("open"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("open"), 2200); }
 function refreshMarks(id){
@@ -859,6 +874,13 @@ const ACT = {
     document.querySelectorAll(`.selbtn[data-id="${id}"]`).forEach(b => b.setAttribute("aria-pressed", sel.has(id)));
     const g = $("#selGo"); if (g){ g.disabled = !sel.size; g.querySelector("span").textContent = sel.size ? `Exportar ${sel.size} en PDF` : "Toca las que quieras"; }
   },
+  prompt: () => { const it = findIdea(sheetId); if (!it) return;
+    openModal(`<h2>Prompt para otro chat</h2><p>Cópialo y pégalo en un chat nuevo. Lleva la idea, tus respuestas, tu meta y lo que quieres evitar.</p>
+      <textarea class="area" id="pText" readonly style="min-height:220px;font-size:13px;border-color:rgba(27,25,5,.2)" aria-label="Prompt">${esc(buildPrompt(it))}</textarea>
+      <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cerrar</button><button class="btn dark press" style="flex:1" data-act="copyPrompt">${ICON.copy}<span>Copiar</span></button></div>`);
+    const t = $("#pText"); if (t) setTimeout(() => t.blur(), 0); },
+  copyPrompt: () => { const t = $("#pText"); if (!t) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(() => { toast("Prompt copiado"); buzz(10); }).catch(() => fallbackCopy(t)); else fallbackCopy(t); },
   install: async () => {
     if (deferred){ deferred.prompt(); await deferred.userChoice; deferred = null; $("#installBtn").hidden = true; return; }
     openModal(`<h2>Instalar en tu teléfono</h2><p><strong>iPhone:</strong> en Safari toca Compartir y luego «Agregar a inicio».</p><p><strong>Android:</strong> en Chrome abre el menú de tres puntos y toca «Instalar app».</p><button class="btn dark press wide" data-act="closeModal">Entendido</button>`);
