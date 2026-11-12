@@ -5,6 +5,7 @@ App para el teléfono que te da **10 ideas de negocio** a partir de 6 preguntas,
 - Funciona **con y sin internet** (se instala desde el navegador).
 - Guarda tus ideas favoritas en **carpetas** que tú armas.
 - **Desarrollar** una idea (plan de 30 días con números) o **variarla**.
+- **IA opcional y gratis:** en Ajustes puedes pegar una clave de Google Gemini; con internet las ideas las escribe la IA.
 - Todo se guarda en tu teléfono; no hay cuentas ni servidores.
 
 ## Instalar

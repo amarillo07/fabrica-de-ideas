@@ -198,6 +198,13 @@ nav .count{position:absolute;top:2px;right:4px;min-width:18px;height:18px;border
 .check svg{opacity:0;transform:scale(.4);transition:all .3s var(--spring)}
 .frow[aria-pressed="true"] .check svg{opacity:1;transform:none}
 
+.skel{height:112px;border-radius:28px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--ink2)}
+.skel::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.75) 50%,transparent 70%);animation:sweep 1.4s infinite}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.ia{font-size:11px;font-weight:700;letter-spacing:.06em;padding:2px 7px;border-radius:8px;background:var(--ink);color:var(--cream);margin-left:6px}
+#modal a{color:var(--ink);font-weight:700;overflow-wrap:anywhere}
+#modal .note{font-size:13px}
+.topr{display:flex;gap:8px;align-items:center}
 #toast{position:fixed;z-index:30;left:50%;top:calc(14px + env(safe-area-inset-top,0px));translate:-50% 0;transform:translateY(-160%);transition:transform .5s var(--spring);background:var(--ink);color:var(--cream);font-size:14px;font-weight:600;padding:12px 18px;border-radius:999px;max-width:calc(100% - 32px);text-align:center;box-shadow:0 10px 26px rgba(60,40,0,.35)}
 #toast.open{transform:none}
 
@@ -212,7 +219,8 @@ nav .count{position:absolute;top:2px;right:4px;min-width:18px;height:18px;border
 <div id="app">
   <div class="top">
     <div class="pill c" role="status"><span class="dot" id="dot"></span><span id="net">Lista sin conexión</span></div>
-    <button class="pill c press" id="installBtn" data-act="install" hidden>Instalar app</button>
+    <div class="topr"><button class="pill c press" id="installBtn" data-act="install" hidden>Instalar app</button>
+    <button class="ibtn c press" data-act="settings" aria-label="Ajustes de IA"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1B1905" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button></div>
   </div>
   <main id="view"></main>
 </div>
@@ -339,7 +347,8 @@ const T = [
 const A = Object.assign({hobbies:[],custom:[],skills:[],budget:"",time:"",mode:"",goal:""}, store.get("answers", {}));
 let ideas = store.get("ideas", []);
 let folders = store.get("folders", [{id:"fav", name:"Favoritas", ideas:[]}]);
-let tab = "crear", step = 0, dir = 18, openFolder = null, sheetId = null, fresh = false, deferred = null;
+let tab = "crear", step = 0, dir = 18, openFolder = null, sheetId = null, fresh = false, deferred = null, loading = false, busy = "";
+let gkey = store.get("gkey", ""), gmodel = store.get("gmodel", "");
 const save = () => { store.set("answers", A); store.set("ideas", ideas); store.set("folders", folders); };
 
 /* ---------- generador ---------- */
@@ -355,22 +364,88 @@ function makeIdea(level, avoid){
   if (pref.length) pool = pref.concat(Math.random() < .3 ? pool : []);
   const diff = pool.filter(x => !avoid || !avoid.includes(x.nombre));
   const t = pick(diff.length ? diff : pool);
-  const total = t.pr * t.u, neto = total * (1 - t.c);
   let desc = t.desc;
   if (A.skills.length && Math.random() < .45) desc += ` Aquí te ayuda que sabes ${SKILLS[pick(A.skills)]}.`;
+  return shape(level, t, desc, a.t, a.f, false);
+}
+function shape(level, t, desc, tema, fans, ia){
+  const total = t.pr * t.u, neto = total * (1 - t.c);
   const bmax = (BUDGETS.find(x => x.id === A.budget) || {max:Infinity}).max;
   return {
     id:uid(), nivel:level, tipo:t.tipo, nombre:t.nombre, desc,
     ej:`${t.u.toLocaleString("es-MX")} ${t.un} a ${mx(t.pr)} son ${mx(total)} ${t.per || "al mes"}. Quitando costos te quedan unos ${mx(neto)}.`,
-    inv: t.inv[0] === 0 ? `Hasta ${mx(t.inv[1])}` : `${mx(t.inv[0])} a ${mx(t.inv[1])}`,
+    inv: t.inv[0] === 0 ? `Hasta ${mx(t.inv[1])}` : t.inv[0] === t.inv[1] ? mx(t.inv[0]) : `${mx(t.inv[0])} a ${mx(t.inv[1])}`,
     fuera: t.inv[0] > bmax, cobro:t.cobro, riesgo:t.riesgo, paso:t.paso,
-    pr:t.pr, c:t.c, un:t.un, tema:a.t, fans:a.f
+    pr:t.pr, c:t.c, un:t.un, tema, fans, ia
   };
 }
-function generateAll(){
+function localAll(){
   const prev = ideas.map(i => i.nombre);
   ideas = Array.from({length:10}, (_, i) => makeIdea(i + 1, prev));
+}
+
+/* ---------- IA opcional (Google Gemini, con la clave del usuario) ---------- */
+const aiOn = () => !!gkey && navigator.onLine;
+const AIERR = {clave:"La clave de Gemini no funcionó. Revísala en Ajustes.", limite:"Llegaste al límite gratis de la IA por ahora.", red:"La IA no respondió."};
+async function gemini(prompt){
+  const models = [...new Set([gmodel, "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-flash-lite"].filter(Boolean))];
+  let last = {code:"red"};
+  for (const m of models){
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 45000);
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method:"POST", signal:ctl.signal, headers:{"Content-Type":"application/json", "x-goog-api-key":gkey},
+        body:JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{responseMimeType:"application/json", temperature:1.1}})
+      });
+      clearTimeout(tm);
+      if (r.status === 404){ last = {code:"red"}; continue; }
+      if (!r.ok) throw {code: r.status === 429 ? "limite" : [400, 401, 403].includes(r.status) ? "clave" : "red"};
+      const j = await r.json();
+      const txt = ((j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || []).map(p => p.text || "").join("");
+      const data = JSON.parse(txt.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ""));
+      if (m !== gmodel){ gmodel = m; store.set("gmodel", m); }
+      return data;
+    } catch(e){ clearTimeout(tm); throw (e && e.code) ? e : {code:"red"}; }
+  }
+  throw last;
+}
+function perfil(){
+  const L = (list, id) => { const o = list.find(x => x.id === id); return o ? `${o.t} (${o.s})` : "sin dato"; };
+  return `Gustos: ${[...A.hobbies, ...A.custom].join(", ") || "sin dato"}\nHabilidades: ${A.skills.join(", ") || "sin dato"}\nPresupuesto: ${L(BUDGETS, A.budget)} MXN\nTiempo: ${L(TIMES, A.time)}\nForma de trabajo: ${L(MODES, A.mode)}\nObjetivo: ${L(GOALS, A.goal)}`;
+}
+const FORM = '{"tipo":"etiqueta de 1 a 3 palabras","nombre":"nombre concreto y con gancho","desc":"2 frases claras","tema":"una o dos palabras","fans":"quién lo compra","un":"unidad de venta en plural, ej. pedidos","pr":350,"u":14,"c":0.45,"invMin":800,"invMax":3000,"cobro":"tiempo al primer cobro, ej. 2 semanas","riesgo":"bajo, medio o alto","paso":"una acción concreta para esta semana"}\npr es el precio por venta en pesos, u las ventas realistas al mes, c la fracción del precio que se va en costos (entre 0 y 1), invMin e invMax la inversión inicial en pesos.';
+const RULES = "Eres asesor de emprendimiento en México. Cifras en pesos mexicanos y realistas para México. Respeta el presupuesto, el tiempo y la forma de trabajo del perfil. Español de México, sin emojis.";
+function fromAI(o, level){
+  const num = (v, d) => { v = Number(v); return isFinite(v) && v > 0 ? v : d; };
+  const r = String(o.riesgo || "").toLowerCase();
+  const t = {tipo:String(o.tipo || "Idea").slice(0, 30), nombre:String(o.nombre || "").slice(0, 90), un:String(o.un || "ventas").slice(0, 30),
+    pr:Math.round(num(o.pr, 300)), u:Math.round(num(o.u, 20)), c:Math.min(.9, Math.max(.02, Number(o.c) || .5)),
+    inv:[Math.max(0, Math.round(Number(o.invMin) || 0)), Math.round(num(o.invMax, 5000))], cobro:String(o.cobro || "1 mes").slice(0, 30),
+    riesgo:["bajo","medio","alto"].includes(r) ? r : (level <= 3 ? "bajo" : level <= 7 ? "medio" : "alto"), paso:String(o.paso || "").slice(0, 240)};
+  if (!t.nombre) throw {code:"red"};
+  if (t.inv[1] < t.inv[0]) t.inv[1] = t.inv[0];
+  return shape(level, t, String(o.desc || "").slice(0, 420), String(o.tema || "negocio").slice(0, 30), String(o.fans || "tus clientes").slice(0, 80), true);
+}
+async function generateAll(){
+  let how = "local";
+  if (aiOn()){
+    loading = true; go("ideas");
+    try {
+      const prev = ideas.map(i => i.nombre).join("; ");
+      const arr = await gemini(`${RULES}\nPropón EXACTAMENTE 10 ideas de negocio ordenadas: la 1 es la más segura y probada; de la 2 a la 4 realistas con un giro; de la 5 a la 7 creativas que mezclan los gustos; la 8 y la 9 muy originales de nicho; la 10 es la más única y atrevida, pero posible.${prev ? " No repitas estas: " + prev + "." : ""}\n\nPERFIL\n${perfil()}\n\nResponde solo con un arreglo JSON de 10 objetos con esta forma:\n${FORM}`);
+      const list = (Array.isArray(arr) ? arr : (arr && arr.ideas) || []).slice(0, 10).map((o, i) => fromAI(o, i + 1));
+      if (list.length < 10) throw {code:"red"};
+      ideas = list; how = "ia";
+    } catch(e){ localAll(); how = (e && e.code) || "red"; }
+    loading = false;
+  } else localAll();
   fresh = true; save();
+  return how;
+}
+async function runGen(){
+  const how = await generateAll();
+  buzz([12, 40, 18]); step = 0; go("ideas");
+  toast(how === "ia" ? "10 ideas hechas con IA" : how === "local" ? "10 ideas recién fabricadas" : AIERR[how] + " Usé el generador propio.");
 }
 function planFor(it){
   const costo = it.pr * it.c, gan = it.pr - costo;
@@ -425,7 +500,7 @@ function cardHTML(it, i){
     <div class="chead">
       <button class="cmain press" data-act="open" data-id="${it.id}">
         <span class="lv" style="background:${LV[it.nivel - 1]};color:${lvInk(it.nivel)}">${it.nivel}</span>
-        <span class="ct"><b>${esc(it.nombre)}</b><small>${esc(it.tipo)} · riesgo ${it.riesgo}</small></span>
+        <span class="ct"><b>${esc(it.nombre)}</b><small>${esc(it.tipo)} · riesgo ${it.riesgo}${it.ia ? '<span class="ia">IA</span>' : ""}</small></span>
       </button>
       <button class="bm press" data-act="pick" data-id="${it.id}" aria-pressed="${saved}" aria-label="${saved ? "Guardada. Cambiar carpetas" : "Guardar en carpeta"}">${ICON.bm}</button>
     </div>
@@ -434,6 +509,8 @@ function cardHTML(it, i){
 }
 
 function viewIdeas(){
+  if (loading) return `<section class="view"><div><span class="eyebrow">Con IA</span><h1 class="title">Fabricando <span class="serif">ideas</span></h1></div>
+    <div class="list">${[0,1,2,3,4].map(i => `<div class="skel g" style="--i:${i}">${i === 0 ? "Pensando a tu medida…" : ""}</div>`).join("")}</div></section>`;
   if (!ideas.length) return `<section class="view"><h1 class="title">Tus 10 <span class="serif">ideas</span></h1>
     <div class="empty g"><h2>Todavía no hay ideas</h2><p>Contesta las 6 preguntas y aquí aparecerán, ordenadas de la más segura a la más atrevida.</p>
     <button class="btn dark press" data-act="tab" data-tab="crear">Empezar ${ICON.next}</button></div></section>`;
@@ -498,8 +575,8 @@ function renderSheet(){
       <h3>Números sencillos</h3><div class="nums"><div><b>${mx(it.pr)}</b>precio por venta</div><div><b>${mx(pl.costo)}</b>costo aproximado</div><div><b>${mx(pl.gan)}</b>ganancia por venta</div><div><b>${pl.n.toLocaleString("es-MX")}</b>ventas para ganar ${mx(pl.meta)} al mes</div></div>
       <h3>Nombres posibles</h3><ul>${pl.names.map(n => `<li>${esc(n)}</li>`).join("")}</ul>
       <h3>El mayor riesgo</h3><p style="font-size:15px">${esc(pl.risk)}</p></div>` : ""}
-    <div class="row"><button class="btn c press" style="flex:1" data-act="develop">${ICON.list}<span>${pl ? "Ocultar plan" : "Desarrollar"}</span></button>
-      <button class="btn c press" style="flex:1" data-act="vary">${ICON.mix}<span>Variar idea</span></button></div>
+    <div class="row"><button class="btn c press" style="flex:1" data-act="develop" ${busy ? "disabled" : ""}>${ICON.list}<span>${busy === "develop" ? "Pensando…" : pl ? "Ocultar plan" : "Desarrollar"}</span></button>
+      <button class="btn c press" style="flex:1" data-act="vary" ${busy ? "disabled" : ""}>${ICON.mix}<span>${busy === "vary" ? "Pensando…" : "Variar idea"}</span></button></div>
     <button class="btn big cta press wide" style="flex:none" data-act="pick" data-id="${it.id}">${ICON.bm}<span>${saved ? "Cambiar carpetas" : "Guardar en carpeta"}</span></button>`;
 }
 function openSheet(id){ sheetId = id; renderSheet(); $("#sheet").scrollTop = 0; $("#sheet").classList.add("open"); $("#scrim").classList.add("open"); }
@@ -537,7 +614,7 @@ const ACT = {
   next: () => {
     if (!stepOk(step)) return;
     if (step < STEPS.length - 1){ dir = 18; step++; render(); window.scrollTo({top:0, behavior:"smooth"}); }
-    else { generateAll(); buzz([12, 40, 18]); step = 0; go("ideas"); toast("10 ideas recién fabricadas"); }
+    else runGen();
   },
   chip: el => { const k = STEPS[step].key, v = el.dataset.v, i = A[k].indexOf(v); i < 0 ? A[k].push(v) : A[k].splice(i, 1); el.setAttribute("aria-pressed", i < 0); buzz(8); save(); syncNext(); },
   unCustom: el => { A.custom = A.custom.filter(x => x !== el.dataset.v); save(); render(); },
@@ -547,7 +624,7 @@ const ACT = {
   closeSheet, closeModal,
   submitModal: () => modalSubmit && modalSubmit(),
   jump: el => { const c = document.getElementById("c-" + el.dataset.id); c && c.scrollIntoView({behavior:"smooth", block:"start"}); },
-  regen: () => { generateAll(); buzz(14); render(); window.scrollTo({top:0, behavior:"smooth"}); toast("Otras 10 ideas listas"); },
+  regen: () => { if (!loading) runGen(); },
   pick: el => openModal(pickerHTML(el.dataset.id)),
   toggleIn: el => {
     const f = folders.find(x => x.id === el.dataset.f), id = el.dataset.id, i = f.ideas.findIndex(x => x.id === id);
@@ -563,16 +640,62 @@ const ACT = {
   renameFolder: () => { const f = folders.find(x => x.id === openFolder); askText("Cambiar nombre", "Nombre", f.name, "Guardar", v => { f.name = v; save(); render(); }); },
   askDelete: () => { const f = folders.find(x => x.id === openFolder); openModal(`<h2>¿Borrar «${esc(f.name)}»?</h2><p>${f.ideas.length ? `Se borrarán también sus ${f.ideas.length} ideas guardadas.` : "La carpeta está vacía."} No se puede deshacer.</p><div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="doDelete">Borrar carpeta</button></div>`); },
   doDelete: () => { folders = folders.filter(x => x.id !== openFolder); openFolder = null; save(); closeModal(); render(); toast("Carpeta borrada"); },
-  develop: () => { const it = findIdea(sheetId); if (!it) return; it.plan = it.plan ? null : planFor(it); save(); renderSheet(); if (it.plan) setTimeout(() => { const p = $("#sheet .plan"); p && p.scrollIntoView({behavior:"smooth", block:"start"}); }, 60); },
-  vary: () => {
-    const old = findIdea(sheetId); if (!old) return;
-    const nu = makeIdea(old.nivel, [old.nombre]);
+  develop: async () => {
+    const it = findIdea(sheetId); if (!it || busy) return;
+    if (it.plan){ it.plan = null; save(); renderSheet(); return; }
+    const plan = planFor(it);
+    if (aiOn()){
+      busy = "develop"; renderSheet();
+      try {
+        const o = await gemini(`${RULES}\nDesarrolla esta idea de negocio para la persona del perfil.\nIDEA: ${it.nombre}. ${it.desc} Inversión: ${it.inv}. Precio por venta: ${mx(it.pr)}.\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON: {"weeks":["semana 1","semana 2","semana 3","semana 4"],"names":["nombre 1","nombre 2","nombre 3"],"risk":"el mayor riesgo y cómo evitarlo, en 1 o 2 frases"}\nCada semana es una acción concreta de una frase.`);
+        if (Array.isArray(o.weeks) && o.weeks.length >= 3) plan.weeks = o.weeks.slice(0, 4).map(x => String(x).slice(0, 260));
+        if (Array.isArray(o.names) && o.names.length) plan.names = o.names.slice(0, 3).map(x => String(x).slice(0, 60));
+        if (o.risk) plan.risk = String(o.risk).slice(0, 320);
+      } catch(e){ toast(AIERR[(e && e.code) || "red"] + " Usé el plan básico."); }
+      busy = "";
+    }
+    it.plan = plan; save();
+    if (sheetId === it.id){ renderSheet(); setTimeout(() => { const p = $("#sheet .plan"); p && p.scrollIntoView({behavior:"smooth", block:"start"}); }, 60); }
+  },
+  vary: async () => {
+    const old = findIdea(sheetId); if (!old || busy) return;
+    let nu = null;
+    if (aiOn()){
+      busy = "vary"; renderSheet();
+      try {
+        const o = await gemini(`${RULES}\nPropón UNA idea de negocio nueva y distinta a "${old.nombre}", con el mismo nivel de atrevimiento: ${old.nivel} de 10 (1 es lo más seguro, 10 lo más único).\n\nPERFIL\n${perfil()}\n\nResponde solo con un objeto JSON con esta forma:\n${FORM}`);
+        nu = fromAI(Array.isArray(o) ? o[0] : o, old.nivel);
+      } catch(e){ toast(AIERR[(e && e.code) || "red"] + " Usé el generador propio."); }
+      busy = "";
+    }
+    const viaIA = !!nu;
+    if (!nu) nu = makeIdea(old.nivel, [old.nombre]);
     const i = ideas.findIndex(x => x.id === old.id);
     if (i >= 0){ ideas[i] = nu; } else { ideas = ideas.filter(x => x.nivel !== nu.nivel).concat(nu).sort((x, y) => x.nivel - y.nivel); }
-    save(); buzz(12); sheetId = nu.id; renderSheet(); $("#sheet").scrollTop = 0;
-    const s = $("#sheet"); s.animate([{transform:"translateY(0) scale(1)"},{transform:"translateY(10px) scale(.975)"},{transform:"translateY(0) scale(1)"}], {duration:420, easing:"cubic-bezier(.2,.9,.25,1.12)"});
+    save(); buzz(12);
+    if (sheetId === old.id){
+      sheetId = nu.id; renderSheet(); $("#sheet").scrollTop = 0;
+      $("#sheet").animate([{transform:"translateY(0) scale(1)"},{transform:"translateY(10px) scale(.975)"},{transform:"translateY(0) scale(1)"}], {duration:420, easing:"cubic-bezier(.2,.9,.25,1.12)"});
+    }
     if (tab !== "carpetas") render();
-    toast("Nueva versión de la idea");
+    if (viaIA || !aiOn()) toast("Nueva versión de la idea");
+  },
+  settings: () => openModal(`<h2>Ideas con IA gratis</h2>
+    <p>Con una clave de Google Gemini, la app usa IA cuando hay internet. Sin internet sigue el generador propio.</p>
+    <p class="note">Consigue tu clave gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Se guarda solo en este teléfono. En el nivel gratuito, Google usa lo que envías para mejorar sus productos.</p>
+    <input class="field" id="kInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Pega aquí tu clave" value="${esc(gkey)}" aria-label="Clave de Gemini" style="background:#fff;border-color:rgba(27,25,5,.2)">
+    <p id="kMsg" role="status"><strong>${gkey ? "IA activada." : "IA apagada."}</strong></p>
+    <div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="dropKey" ${gkey ? "" : "disabled"}>Quitar clave</button><button class="btn dark press" style="flex:1" data-act="saveKey">Guardar y probar</button></div>
+    <button class="btn press wide" style="background:#fff" data-act="closeModal">Cerrar</button>`),
+  dropKey: () => { gkey = ""; gmodel = ""; store.set("gkey", ""); store.set("gmodel", ""); net(); closeModal(); toast("Clave quitada. IA apagada."); },
+  saveKey: async el => {
+    const v = $("#kInput").value.trim(), msg = $("#kMsg"); if (!v) { msg.innerHTML = "<strong>Pega primero tu clave.</strong>"; return; }
+    gkey = v; store.set("gkey", v); net();
+    if (!navigator.onLine){ msg.innerHTML = "<strong>Clave guardada.</strong> La probaré cuando haya internet."; return; }
+    el.disabled = true; msg.innerHTML = "<strong>Probando…</strong>";
+    try { await gemini('Responde solo con este JSON: {"ok":true}'); msg.innerHTML = "<strong>Clave funcionando. IA activada.</strong>"; buzz(10); }
+    catch(e){ const c = (e && e.code) || "red"; msg.innerHTML = "<strong>" + (c === "clave" ? "Esa clave no funcionó. Revisa que esté completa." : c === "limite" ? "La clave sirve, pero llegó al límite gratis por ahora." : "No pude probarla. Revisa tu conexión.") + "</strong>"; }
+    el.disabled = false;
   },
   install: async () => {
     if (deferred){ deferred.prompt(); await deferred.userChoice; deferred = null; $("#installBtn").hidden = true; return; }
@@ -594,7 +717,7 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---------- conexión e instalación ---------- */
-function net(){ const on = navigator.onLine; $("#dot").classList.toggle("off", !on); $("#net").textContent = on ? "En línea" : "Sin conexión · todo funciona"; }
+function net(){ const on = navigator.onLine; $("#dot").classList.toggle("off", !on); $("#net").textContent = on ? (gkey ? "IA activa" : "En línea") : "Sin conexión · todo funciona"; }
 addEventListener("online", net); addEventListener("offline", net); net();
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
 if (!standalone) $("#installBtn").hidden = false;
