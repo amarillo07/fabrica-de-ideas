@@ -1,6 +1,6 @@
 // Fábrica de Ideas: guarda la app en el teléfono para que abra sin internet.
-const CACHE = "fdi-v3";
-const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-180.png"];
+const CACHE = "fdi-v4";
+const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "vendor/jspdf.umd.min.js", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-180.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener("fetch", e => {
