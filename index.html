@@ -137,6 +137,10 @@ h1,h2,h3,p{margin:0}
 .bm[aria-pressed="true"] svg{fill:#FFE04D;stroke:#FFE04D}
 .bm.bounce{animation:bounce .5s var(--spring)}
 @keyframes bounce{0%{transform:scale(1)}35%{transform:scale(1.28) rotate(-8deg)}100%{transform:scale(1)}}
+.selbtn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex:none;border-radius:50%}
+.selbtn[aria-pressed="true"] .check{background:var(--ink);border-color:var(--ink)}
+.selbtn[aria-pressed="true"] .check svg{opacity:1;transform:none}
+.selbtn .check{background:var(--white)}
 .tags{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;font-weight:600}
 .tags span{padding:6px 11px;border-radius:12px;background:var(--white)}
 .tags .warn{background:var(--ink);color:var(--cream)}
@@ -355,7 +359,7 @@ let ideas = store.get("ideas", []);
 let folders = store.get("folders", [{id:"fav", name:"Favoritas", ideas:[]}]);
 let tab = "crear", step = 0, dir = 18, openFolder = null, sheetId = null, fresh = false, deferred = null, loading = false, busy = "";
 let gkey = store.get("gkey", ""), gmodel = store.get("gmodel", "");
-let afterSave = null;
+let afterSave = null, sel = null;
 const save = () => { store.set("answers", A); store.set("ideas", ideas); store.set("folders", folders); afterSave && afterSave(); };
 
 /* ---------- generador ---------- */
@@ -509,16 +513,22 @@ function cardHTML(it, i){
   const saved = isSaved(it.id);
   return `<article class="card g" style="--i:${i}" id="c-${it.id}">
     <div class="chead">
-      <button class="cmain press" data-act="open" data-id="${it.id}">
+      <button class="cmain press" data-act="${sel ? "selToggle" : "open"}" data-id="${it.id}">
         <span class="lv" style="background:${LV[it.nivel - 1]};color:${lvInk(it.nivel)}">${it.nivel}</span>
         <span class="ct"><b>${esc(it.nombre)}</b><small>${esc(it.tipo)} · riesgo ${it.riesgo}${it.ia ? '<span class="ia">IA</span>' : ""}</small></span>
       </button>
-      <button class="bm press" data-act="pick" data-id="${it.id}" aria-pressed="${saved}" aria-label="${saved ? "Guardada. Cambiar carpetas" : "Guardar en carpeta"}">${ICON.bm}</button>
+      ${sel ? `<button class="selbtn press" data-act="selToggle" data-id="${it.id}" aria-pressed="${sel.has(it.id)}" aria-label="Seleccionar para el PDF"><span class="check">${ICON.check}</span></button>` : `<button class="bm press" data-act="pick" data-id="${it.id}" aria-pressed="${saved}" aria-label="${saved ? "Guardada. Cambiar carpetas" : "Guardar en carpeta"}">${ICON.bm}</button>`}
     </div>
     <div class="tags"><span>${it.inv}</span><span>Cobras en ${it.cobro}</span>${it.fuera ? '<span class="warn">Sobre tu presupuesto</span>' : ""}</div>
   </article>`;
 }
 
+function selBar(){
+  const n = sel.size;
+  return `<div class="row stick"><button class="btn round c press" data-act="selCancel" aria-label="Cancelar selección">${ICON.x}</button>
+    <button class="btn big cta press" id="selGo" data-act="pdf" data-scope="sel" ${n ? "" : "disabled"}><span>${n ? `Exportar ${n} en PDF` : "Toca las que quieras"}</span></button></div>`;
+}
+const pickBtn = () => `<button class="btn wide c press" data-act="selStart">${ICON.check.replace('stroke="#FFE04D"','stroke="currentColor"').replace('width="14" height="14"','width="18" height="18"')}<span>Elegir ideas para el PDF</span></button>`;
 function viewIdeas(){
   if (loading) return `<section class="view"><div><span class="eyebrow">Con IA</span><h1 class="title">Fabricando <span class="serif">ideas</span></h1></div>
     <div class="list">${[0,1,2,3,4].map(i => `<div class="skel g" style="--i:${i}">${i === 0 ? "Pensando a tu medida…" : ""}</div>`).join("")}</div></section>`;
@@ -531,8 +541,8 @@ function viewIdeas(){
     <div class="spec g"><div class="specbar">${ideas.map(it => `<button data-act="jump" data-id="${it.id}" style="background:${LV[it.nivel - 1]}" aria-label="Ir a la idea ${it.nivel}"></button>`).join("")}</div>
       <div class="specleg"><span>Segura</span><span>Atrevida</span></div></div>
     <div class="list">${ideas.map((it, i) => cardHTML(it, fresh ? i : 0)).join("")}</div>
-    <button class="btn wide c press" data-act="regen">${ICON.loop}<span>Explorar otras 10 ideas</span></button>
-    <button class="btn wide c press" data-act="pdf" data-scope="ideas">${ICON.down}<span>Exportar las 10 en PDF</span></button>
+    ${sel ? selBar() : `<button class="btn wide c press" data-act="regen">${ICON.loop}<span>Explorar otras 10 ideas</span></button>
+    <button class="btn wide c press" data-act="pdf" data-scope="ideas">${ICON.down}<span>Exportar las 10 en PDF</span></button>${pickBtn()}`}
   </section>`;
   fresh = false;
   return html;
@@ -547,7 +557,7 @@ function viewCarpetas(){
         <h1 class="title">${esc(f.name)}</h1>
         <button class="ibtn c press" data-act="renameFolder" aria-label="Cambiar nombre">${ICON.pen}</button>
         <button class="ibtn c press" data-act="askDelete" aria-label="Borrar carpeta">${ICON.trash}</button></div>
-      ${f.ideas.length ? `<div class="list">${f.ideas.map((it, i) => cardHTML(it, i)).join("")}</div><button class="btn wide c press" data-act="pdf" data-scope="folder">${ICON.down}<span>Exportar carpeta en PDF</span></button>` : `<div class="empty g"><h2>Carpeta vacía</h2><p>Toca el marcador de cualquier idea para guardarla aquí.</p></div>`}
+      ${f.ideas.length ? `<div class="list">${f.ideas.map((it, i) => cardHTML(it, i)).join("")}</div>${sel ? selBar() : `<button class="btn wide c press" data-act="pdf" data-scope="folder">${ICON.down}<span>Exportar carpeta en PDF</span></button>${pickBtn()}`}` : `<div class="empty g"><h2>Carpeta vacía</h2><p>Toca el marcador de cualquier idea para guardarla aquí.</p></div>`}
     </section>`;
     openFolder = null;
   }
@@ -557,6 +567,7 @@ function viewCarpetas(){
         <span class="sw" aria-hidden="true">${f.ideas.slice(0, 5).map(it => `<span style="background:${LV[it.nivel - 1]}"></span>`).join("")}</span>
         <span><b>${esc(f.name)}</b><small>${f.ideas.length} ${f.ideas.length === 1 ? "idea" : "ideas"}</small></span></button>`).join("")}
       <button class="folder new press" style="--i:${folders.length}" data-act="newFolder">${ICON.plus}<span>Nueva carpeta</span></button></div>
+    ${total ? `<button class="btn wide c press" data-act="pdf" data-scope="saved">${ICON.down}<span>Exportar todo lo guardado en PDF</span></button>` : ""}
   </section>`;
 }
 
@@ -568,7 +579,7 @@ function render(){
   const total = folders.reduce((n, f) => n + f.ideas.length, 0);
   $("#savedCount").hidden = !total; $("#savedCount").textContent = total;
 }
-function go(t){ tab = t; if (t !== "carpetas") openFolder = null; render(); window.scrollTo({top:0}); }
+function go(t){ tab = t; sel = null; if (t !== "carpetas") openFolder = null; render(); window.scrollTo({top:0}); }
 
 /* ---------- hoja de detalle ---------- */
 function renderSheet(){
@@ -636,9 +647,10 @@ function buildPDF(titulo, list){
   d.setFont("helvetica", "bold"); d.setFontSize(28); d.setTextColor(...INK); d.text("Fábrica de Ideas", M, 66);
   d.setFont("helvetica", "normal"); d.setFontSize(13); d.text(d.splitTextToSize(clean(titulo), W - 2 * M)[0], M, 92);
   d.setFontSize(10); d.setTextColor(...SOFT);
-  d.text(new Date().toLocaleDateString("es-MX", {day:"numeric", month:"long", year:"numeric"}) + "  ·  " + list.length + (list.length === 1 ? " idea" : " ideas") + "  ·  cifras en pesos mexicanos", M, 112);
+  d.text(new Date().toLocaleDateString("es-MX", {day:"numeric", month:"long", year:"numeric"}) + "  ·  " + list.filter(x => !x.h).length + (list.filter(x => !x.h).length === 1 ? " idea" : " ideas") + "  ·  cifras en pesos mexicanos", M, 112);
   y = 176;
   list.forEach(it => {
+    if (it.h){ need(190); d.setFillColor(255, 243, 166); d.roundedRect(M, y - 20, W - 2 * M, 30, 8, 8, "F"); d.setFont("helvetica", "bold"); d.setFontSize(12); d.setTextColor(...INK); d.text(d.splitTextToSize(clean(it.h), W - 2 * M - 24)[0], M + 12, y); y += 44; return; }
     need(150);
     d.setFillColor(...rgb(LV[it.nivel - 1])); d.roundedRect(M, y - 22, 34, 34, 9, 9, "F");
     d.setFont("helvetica", "bold"); d.setFontSize(16); d.setTextColor(...rgb(lvInk(it.nivel))); d.text(String(it.nivel), M + 17, y + 1, {align:"center"});
@@ -704,8 +716,8 @@ const ACT = {
   },
   newFolderFor: el => { const id = el.dataset.id; askText("Nombre de la carpeta", "Ej. Para empezar ya", "", "Crear", v => { const it = findIdea(id); folders.push({id:uid(), name:v, ideas: it ? [JSON.parse(JSON.stringify(it))] : []}); save(); toast(`Guardada en «${v}»`); buzz(10); refreshMarks(id); if (tab === "carpetas") render(); }); },
   newFolder: () => askText("Nombre de la carpeta", "Ej. Locuras con futuro", "", "Crear", v => { folders.push({id:uid(), name:v, ideas:[]}); save(); render(); }),
-  openFolder: el => { openFolder = el.dataset.id; render(); window.scrollTo({top:0}); },
-  closeFolder: () => { openFolder = null; render(); },
+  openFolder: el => { sel = null; openFolder = el.dataset.id; render(); window.scrollTo({top:0}); },
+  closeFolder: () => { sel = null; openFolder = null; render(); },
   renameFolder: () => { const f = folders.find(x => x.id === openFolder); askText("Cambiar nombre", "Nombre", f.name, "Guardar", v => { f.name = v; save(); render(); }); },
   askDelete: () => { const f = folders.find(x => x.id === openFolder); openModal(`<h2>¿Borrar «${esc(f.name)}»?</h2><p>${f.ideas.length ? `Se borrarán también sus ${f.ideas.length} ideas guardadas.` : "La carpeta está vacía."} No se puede deshacer.</p><div class="row"><button class="btn press" style="flex:1;background:#fff" data-act="closeModal">Cancelar</button><button class="btn dark press" style="flex:1" data-act="doDelete">Borrar carpeta</button></div>`); },
   doDelete: () => { folders = folders.filter(x => x.id !== openFolder); openFolder = null; save(); closeModal(); render(); toast("Carpeta borrada"); },
@@ -771,9 +783,18 @@ const ACT = {
     const sc = el.dataset.scope; let list, title;
     if (sc === "idea"){ const it = findIdea(sheetId); if (!it) return; list = [it]; title = it.nombre; }
     else if (sc === "folder"){ const f = folders.find(x => x.id === openFolder); if (!f || !f.ideas.length) return; list = f.ideas.slice().sort((a, b) => a.nivel - b.nivel); title = "Carpeta: " + f.name; }
+    else if (sc === "saved"){ list = folders.filter(f => f.ideas.length).flatMap(f => [{h:`Carpeta: ${f.name}  ·  ${f.ideas.length} ${f.ideas.length === 1 ? "idea" : "ideas"}`}, ...f.ideas.slice().sort((a, b) => a.nivel - b.nivel)]); if (!list.length) return; title = "Mis ideas guardadas"; }
+    else if (sc === "sel"){ if (!sel || !sel.size) return; list = [...sel].map(findIdea).filter(Boolean).sort((a, b) => a.nivel - b.nivel); if (!list.length) return; title = list.length === 1 ? list[0].nombre : "Ideas seleccionadas"; }
     else { if (!ideas.length) return; list = ideas; title = "Mis 10 ideas de negocio"; }
     const slug = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "ideas";
-    try { await deliverPDF(buildPDF(title, list), `fabrica-${slug}.pdf`); } catch(e){ toast("No se pudo crear el PDF"); }
+    try { await deliverPDF(buildPDF(title, list), `fabrica-${slug}.pdf`); if (sc === "sel"){ sel = null; render(); } } catch(e){ toast("No se pudo crear el PDF"); }
+  },
+  selStart: () => { sel = new Set(); render(); toast("Toca las ideas que quieras exportar"); },
+  selCancel: () => { sel = null; render(); },
+  selToggle: el => {
+    if (!sel) return; const id = el.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); buzz(8);
+    document.querySelectorAll(`.selbtn[data-id="${id}"]`).forEach(b => b.setAttribute("aria-pressed", sel.has(id)));
+    const g = $("#selGo"); if (g){ g.disabled = !sel.size; g.querySelector("span").textContent = sel.size ? `Exportar ${sel.size} en PDF` : "Toca las que quieras"; }
   },
   install: async () => {
     if (deferred){ deferred.prompt(); await deferred.userChoice; deferred = null; $("#installBtn").hidden = true; return; }
